@@ -1,0 +1,850 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// =============================================
+// AUTHENTICATION & AUTHORIZATION
+// =============================================
+
+model User {
+  id            String   @id @default(uuid())
+  email         String   @unique
+  passwordHash  String
+  fullName      String
+  phone         String?
+  isActive      Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  // Relations
+  sessions         Session[]
+  userBranchRoles  UserBranchRole[]
+  permissions      UserPermission[]
+  otps             OTP[]
+  passwordResetTokens PasswordResetToken[]
+  auditLogs        AuditLog[]
+  notifications    Notification[]
+  notificationPreferences NotificationPreference[]
+  purchaseRequests PurchaseRequest[]
+  goodsReceipts    GoodsReceipt[]
+  stockTransactions StockTransaction[]
+  journalEntries   JournalEntry[]
+  reports          Report[]
+  documents        Document[]
+  employees        Employee[]
+
+  @@map("users")
+}
+
+model Session {
+  id           String   @id @default(uuid())
+  userId       String
+  branchId     String
+  roleId       String
+  sessionToken String   @unique
+  createdAt    DateTime @default(now())
+  expiresAt    DateTime
+
+  // Relations
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  branch       Branch   @relation(fields: [branchId], references: [id])
+  role         Role     @relation(fields: [roleId], references: [id])
+
+  @@map("sessions")
+}
+
+model OTP {
+  id         String   @id @default(uuid())
+  userId     String
+  code       String
+  type       OTPType
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
+
+  // Relations
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("otps")
+}
+
+model PasswordResetToken {
+  id         String   @id @default(uuid())
+  userId     String
+  token      String   @unique
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
+
+  // Relations
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("password_reset_tokens")
+}
+
+// =============================================
+// ORGANIZATION & RBAC
+// =============================================
+
+model Branch {
+  id       String   @id @default(uuid())
+  name     String
+  code     String   @unique
+  address  String
+  active   Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  userBranchRoles  UserBranchRole[]
+  sessions         Session[]
+  employees        Employee[]
+  payrollPeriods   PayrollPeriod[]
+  purchaseRequests PurchaseRequest[]
+  stock            Stock[]
+  stockTransactions StockTransaction[]
+  journalEntries   JournalEntry[]
+  accountingPeriods AccountingPeriod[]
+  accounts         Account[]
+
+  @@map("branches")
+}
+
+model Role {
+  id          String   @id @default(uuid())
+  name        String   @unique
+  description String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  permissions     RolePermission[]
+  userBranchRoles UserBranchRole[]
+  sessions        Session[]
+  workflowSteps   WorkflowStep[]
+
+  @@map("roles")
+}
+
+model Permission {
+  id          String   @id @default(uuid())
+  name        String   @unique
+  description String?
+  module      String?
+  createdAt   DateTime @default(now())
+
+  // Relations
+  rolePermissions RolePermission[]
+  userPermissions UserPermission[]
+
+  @@map("permissions")
+}
+
+model UserBranchRole {
+  id        String   @id @default(uuid())
+  userId    String
+  branchId  String
+  roleId    String
+  createdAt DateTime @default(now())
+
+  // Relations
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  branch    Branch   @relation(fields: [branchId], references: [id])
+  role      Role     @relation(fields: [roleId], references: [id])
+
+  @@unique([userId, branchId, roleId])
+  @@map("user_branch_roles")
+}
+
+model RolePermission {
+  id           String   @id @default(uuid())
+  roleId       String
+  permissionId String
+  createdAt    DateTime @default(now())
+
+  // Relations
+  role         Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission   Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@unique([roleId, permissionId])
+  @@map("role_permissions")
+}
+
+model UserPermission {
+  id           String   @id @default(uuid())
+  userId       String
+  permissionId String
+  createdAt    DateTime @default(now())
+
+  // Relations
+  user         User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  permission   Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, permissionId])
+  @@map("user_permissions")
+}
+
+// =============================================
+// PAYROLL MODULE
+// =============================================
+
+model Employee {
+  id               String   @id @default(uuid())
+  userId           String   @unique
+  branchId         String
+  payGradeId       String?
+  customComponents Json?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  // Relations
+  user             User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  branch           Branch     @relation(fields: [branchId], references: [id])
+  payGrade         PayGrade?  @relation(fields: [payGradeId], references: [id])
+  payslips         Payslip[]
+
+  @@map("employees")
+}
+
+model PayGrade {
+  id         String   @id @default(uuid())
+  name       String
+  components Json     // [{ type: "earning", label: "Basic", amount: 50000 }]
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  // Relations
+  employees  Employee[]
+
+  @@map("pay_grades")
+}
+
+model SalaryComponent {
+  id            String   @id @default(uuid())
+  type          ComponentType
+  label         String
+  defaultAmount Float
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@map("salary_components")
+}
+
+model PayrollPeriod {
+  id         String   @id @default(uuid())
+  branchId   String
+  startDate  DateTime
+  endDate    DateTime
+  status     PayrollStatus
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  // Relations
+  branch     Branch   @relation(fields: [branchId], references: [id])
+  payslips   Payslip[]
+
+  @@map("payroll_periods")
+}
+
+model Payslip {
+  id           String   @id @default(uuid())
+  employeeId   String
+  periodId     String
+  netPay       Float
+  status       PayslipStatus
+  pdfUrl       String?
+  generatedAt  DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  // Relations
+  employee     Employee @relation(fields: [employeeId], references: [id])
+  period       PayrollPeriod @relation(fields: [periodId], references: [id])
+  items        PayslipItem[]
+
+  @@map("payslips")
+}
+
+model PayslipItem {
+  id         String   @id @default(uuid())
+  payslipId  String
+  label      String
+  type       ComponentType
+  amount     Float
+  createdAt  DateTime @default(now())
+
+  // Relations
+  payslip    Payslip  @relation(fields: [payslipId], references: [id], onDelete: Cascade)
+
+  @@map("payslip_items")
+}
+
+// =============================================
+// WORKFLOWS ENGINE
+// =============================================
+
+model Workflow {
+  id        String   @id @default(uuid())
+  name      String
+  module    String
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  steps     WorkflowStep[]
+
+  @@map("workflows")
+}
+
+model WorkflowStep {
+  id          String   @id @default(uuid())
+  workflowId  String
+  stepOrder   Int
+  roleId      String
+  action      WorkflowAction
+  createdAt   DateTime @default(now())
+
+  // Relations
+  workflow    Workflow @relation(fields: [workflowId], references: [id], onDelete: Cascade)
+  role        Role     @relation(fields: [roleId], references: [id])
+
+  @@unique([workflowId, stepOrder])
+  @@map("workflow_steps")
+}
+
+// =============================================
+// REPORTING & ANALYTICS
+// =============================================
+
+model Report {
+  id          String   @id @default(uuid())
+  name        String
+  module      String
+  filters     Json
+  createdBy   String
+  createdAt   DateTime @default(now())
+  format      ReportFormat
+  snapshotUrl String?
+
+  // Relations
+  user        User     @relation(fields: [createdBy], references: [id])
+
+  @@map("reports")
+}
+
+// =============================================
+// AUDIT LOGGING
+// =============================================
+
+model AuditLog {
+  id          String   @id @default(uuid())
+  userId      String
+  action      String
+  module      String
+  description String?
+  ipAddress   String?
+  metadata    Json?
+  createdAt   DateTime @default(now())
+
+  // Relations
+  user        User     @relation(fields: [userId], references: [id])
+
+  @@map("audit_logs")
+}
+
+// =============================================
+// DOCUMENT MANAGEMENT
+// =============================================
+
+model Document {
+  id         String   @id @default(uuid())
+  title      String
+  fileUrl    String
+  fileType   String
+  module     String?
+  uploadedBy String
+  uploadedAt DateTime @default(now())
+
+  // Relations
+  user       User     @relation(fields: [uploadedBy], references: [id])
+  purchaseRequests PurchaseRequest[]
+  purchaseOrders   PurchaseOrder[]
+  invoices         Invoice[]
+
+  @@map("documents")
+}
+
+// =============================================
+// ACCOUNTING MODULE
+// =============================================
+
+model Account {
+  id         String      @id @default(uuid())
+  code       String      @unique
+  name       String
+  type       AccountType
+  parentId   String?
+  branchId   String?
+  isActive   Boolean     @default(true)
+  createdAt  DateTime    @default(now())
+  updatedAt  DateTime    @updatedAt
+
+  // Relations
+  parent     Account?    @relation("AccountHierarchy", fields: [parentId], references: [id])
+  children   Account[]   @relation("AccountHierarchy")
+  branch     Branch?     @relation(fields: [branchId], references: [id])
+  journalEntryLines JournalEntryLine[]
+
+  @@map("accounts")
+}
+
+model JournalEntry {
+  id          String   @id @default(uuid())
+  reference   String
+  date        DateTime
+  description String?
+  createdBy   String
+  branchId    String
+  createdAt   DateTime @default(now())
+
+  // Relations
+  lines       JournalEntryLine[]
+  user        User     @relation(fields: [createdBy], references: [id])
+  branch      Branch   @relation(fields: [branchId], references: [id])
+
+  @@map("journal_entries")
+}
+
+model JournalEntryLine {
+  id            String   @id @default(uuid())
+  journalEntryId String
+  accountId     String
+  description   String?
+  debit         Float    @default(0)
+  credit        Float    @default(0)
+  createdAt     DateTime @default(now())
+
+  // Relations
+  journalEntry  JournalEntry @relation(fields: [journalEntryId], references: [id], onDelete: Cascade)
+  account       Account      @relation(fields: [accountId], references: [id])
+
+  @@map("journal_entry_lines")
+}
+
+model AccountingPeriod {
+  id         String   @id @default(uuid())
+  branchId   String
+  startDate  DateTime
+  endDate    DateTime
+  isClosed   Boolean  @default(false)
+  createdAt  DateTime @default(now())
+
+  // Relations
+  branch     Branch   @relation(fields: [branchId], references: [id])
+
+  @@map("accounting_periods")
+}
+
+// =============================================
+// INVENTORY MANAGEMENT
+// =============================================
+
+model Item {
+  id           String   @id @default(uuid())
+  name         String
+  sku          String   @unique
+  categoryId   String?
+  unit         String
+  reorderLevel Int?
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  // Relations
+  category     ItemCategory? @relation(fields: [categoryId], references: [id])
+  stock        Stock[]
+  stockTransactions StockTransaction[]
+
+  @@map("items")
+}
+
+model ItemCategory {
+  id       String   @id @default(uuid())
+  name     String
+  code     String   @unique
+  parentId String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  parent   ItemCategory? @relation("CategoryHierarchy", fields: [parentId], references: [id])
+  children ItemCategory[] @relation("CategoryHierarchy")
+  items    Item[]
+
+  @@map("item_categories")
+}
+
+model Stock {
+  id        String   @id @default(uuid())
+  itemId    String
+  branchId  String
+  quantity  Int      @default(0)
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  item      Item     @relation(fields: [itemId], references: [id])
+  branch    Branch   @relation(fields: [branchId], references: [id])
+
+  @@unique([itemId, branchId])
+  @@map("stock")
+}
+
+model StockTransaction {
+  id         String   @id @default(uuid())
+  itemId     String
+  branchId   String
+  type       StockTransactionType
+  quantity   Int
+  reason     String?
+  reference  String?
+  createdBy  String
+  timestamp  DateTime @default(now())
+
+  // Relations
+  item       Item     @relation(fields: [itemId], references: [id])
+  branch     Branch   @relation(fields: [branchId], references: [id])
+  user       User     @relation(fields: [createdBy], references: [id])
+
+  @@map("stock_transactions")
+}
+
+// =============================================
+// PROCUREMENT MODULE
+// =============================================
+
+model PurchaseRequest {
+  id           String   @id @default(uuid())
+  requesterId  String
+  branchId     String
+  status       RequestStatus
+  reason       String
+  totalAmount  Float
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  // Relations
+  requester    User     @relation(fields: [requesterId], references: [id])
+  branch       Branch   @relation(fields: [branchId], references: [id])
+  items        PurchaseRequestItem[]
+  documents    Document[]
+  purchaseOrder PurchaseOrder?
+
+  @@map("purchase_requests")
+}
+
+model PurchaseRequestItem {
+  id             String   @id @default(uuid())
+  requestId      String
+  itemName       String
+  quantity       Int
+  estimatedCost  Float
+  createdAt      DateTime @default(now())
+
+  // Relations
+  purchaseRequest PurchaseRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+
+  @@map("purchase_request_items")
+}
+
+model Vendor {
+  id            String   @id @default(uuid())
+  name          String
+  email         String?
+  phone         String?
+  address       String?
+  taxId         String?
+  isActive      Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  // Relations
+  purchaseOrders PurchaseOrder[]
+  invoices       Invoice[]
+
+  @@map("vendors")
+}
+
+model PurchaseOrder {
+  id           String   @id @default(uuid())
+  requestId    String   @unique
+  vendorId     String
+  orderNumber  String   @unique
+  status       OrderStatus
+  amount       Float
+  deliveryDate DateTime?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  // Relations
+  request      PurchaseRequest @relation(fields: [requestId], references: [id])
+  vendor       Vendor          @relation(fields: [vendorId], references: [id])
+  items        PurchaseOrderItem[]
+  goodsReceipts GoodsReceipt[]
+  invoice       Invoice?
+  documents    Document[]
+
+  @@map("purchase_orders")
+}
+
+model PurchaseOrderItem {
+  id          String   @id @default(uuid())
+  orderId     String
+  itemName    String
+  quantity    Int
+  unitPrice   Float
+  receivedQty Int      @default(0)
+  createdAt   DateTime @default(now())
+
+  // Relations
+  order       PurchaseOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@map("purchase_order_items")
+}
+
+model GoodsReceipt {
+  id         String   @id @default(uuid())
+  orderId    String
+  itemId     String?
+  itemName   String
+  quantity   Int
+  receivedAt DateTime @default(now())
+  receivedBy String
+
+  // Relations
+  order      PurchaseOrder @relation(fields: [orderId], references: [id])
+  user       User          @relation(fields: [receivedBy], references: [id])
+
+  @@map("goods_receipts")
+}
+
+model Invoice {
+  id           String   @id @default(uuid())
+  orderId      String   @unique
+  vendorId     String
+  invoiceNumber String
+  amount       Float
+  status       InvoiceStatus
+  issuedDate   DateTime
+  paidDate     DateTime?
+  createdAt    DateTime @default(now())
+
+  // Relations
+  order        PurchaseOrder @relation(fields: [orderId], references: [id])
+  vendor       Vendor        @relation(fields: [vendorId], references: [id])
+  payment      Payment?
+  documents    Document[]
+
+  @@map("invoices")
+}
+
+model Payment {
+  id           String   @id @default(uuid())
+  invoiceId    String   @unique
+  amount       Float
+  paidAt       DateTime
+  paymentMethod String
+  reference     String?
+  createdAt    DateTime @default(now())
+
+  // Relations
+  invoice      Invoice @relation(fields: [invoiceId], references: [id])
+
+  @@map("payments")
+}
+
+// =============================================
+// NOTIFICATIONS MODULE
+// =============================================
+
+model Notification {
+  id        String   @id @default(uuid())
+  userId    String
+  message   String
+  type      NotificationType
+  module    String?
+  metadata  Json?
+  isRead    Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  // Relations
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("notifications")
+}
+
+model NotificationPreference {
+  id         String   @id @default(uuid())
+  userId     String
+  type       NotificationType
+  enabled    Boolean  @default(true)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  // Relations
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, type])
+  @@map("notification_preferences")
+}
+
+// =============================================
+// SETTINGS & CONFIGURATION
+// =============================================
+
+model Setting {
+  id          String      @id @default(uuid())
+  key         String      @unique
+  value       String
+  type        SettingType
+  group       String?
+  label       String
+  description String?
+  updatedAt   DateTime    @updatedAt
+  createdAt   DateTime    @default(now())
+
+  @@map("settings")
+}
+
+model FeatureToggle {
+  id          String   @id @default(uuid())
+  name        String   @unique
+  module      String?
+  enabled     Boolean  @default(true)
+  description String?
+  updatedAt   DateTime @updatedAt
+  createdAt   DateTime @default(now())
+
+  @@map("feature_toggles")
+}
+
+// =============================================
+// BACKUP MANAGEMENT
+// =============================================
+
+model BackupLog {
+  id          String   @id @default(uuid())
+  type        BackupType
+  status      BackupStatus
+  createdAt   DateTime @default(now())
+  storagePath String
+  triggeredBy String?
+  notes       String?
+
+  @@map("backup_logs")
+}
+
+// =============================================
+// ENUMS
+// =============================================
+
+enum OTPType {
+  EMAIL
+  SMS
+}
+
+enum ComponentType {
+  EARNING
+  DEDUCTION
+}
+
+enum PayrollStatus {
+  DRAFT
+  APPROVED
+  FINALIZED
+}
+
+enum PayslipStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum WorkflowAction {
+  APPROVE
+  REJECT
+  EDIT
+  NOTIFY
+}
+
+enum ReportFormat {
+  CSV
+  XLSX
+  PDF
+}
+
+enum AccountType {
+  ASSET
+  LIABILITY
+  EQUITY
+  REVENUE
+  EXPENSE
+}
+
+enum StockTransactionType {
+  IN
+  OUT
+  ADJUSTMENT
+}
+
+enum RequestStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  CANCELLED
+}
+
+enum OrderStatus {
+  ISSUED
+  APPROVED
+  RECEIVED
+  CANCELLED
+}
+
+enum InvoiceStatus {
+  PENDING
+  PAID
+  REJECTED
+}
+
+enum NotificationType {
+  IN_APP
+  EMAIL
+  SMS
+}
+
+enum SettingType {
+  STRING
+  BOOLEAN
+  NUMBER
+  JSON
+}
+
+enum BackupType {
+  FULL
+  INCREMENTAL
+  CONFIG
+  DOCUMENTS
+}
+
+enum BackupStatus {
+  SUCCESS
+  FAILED
+  IN_PROGRESS
+}
